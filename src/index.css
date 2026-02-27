@@ -1,0 +1,163 @@
+:root {
+  --background: #FAFBFC;
+  --surface: #FFFFFF;
+  --border: #E1E4E8;
+  --primary: #2563EB;
+  --primary-hover: #1D4ED8;
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
+  --console-log: #374151;
+  --console-info: #2563EB;
+  --console-warn: #D97706;
+  --console-error: #DC2626;
+  --resizer-width: 6px;
+}
+
+[data-theme="dark"] {
+  --background: #0D1117;
+  --surface: #161B22;
+  --border: #30363D;
+  --primary: #58A6FF;
+  --primary-hover: #79B8FF;
+  --text-primary: #E6EDF3;
+  --text-secondary: #8B949E;
+  --console-log: #C9D1D9;
+  --console-info: #58A6FF;
+  --console-warn: #D29922;
+  --console-error: #F85149;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--background);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar-pane {
+  flex-shrink: 0;
+  width: 280px;
+  overflow: auto;
+}
+
+.panels {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.editor-pane,
+.console-pane {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.resizer {
+  flex-shrink: 0;
+  width: var(--resizer-width);
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 150ms ease;
+  position: relative;
+}
+
+.resizer:hover,
+.resizer:active {
+  background: var(--primary);
+}
+
+.mobile-tabs {
+  display: none;
+}
+
+.sidebar-toggle {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 50;
+  font-size: 20px;
+}
+
+.sidebar-toggle:hover {
+  background: var(--primary-hover);
+}
+
+@media (max-width: 767px) {
+  .mobile-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+
+  .mobile-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+
+  .panels.editor-active .console-pane,
+  .panels.editor-active .editor-pane {
+    display: none;
+  }
+
+  .panels.editor-active .editor-pane {
+    display: block;
+  }
+
+  .panels.console-active .editor-pane,
+  .panels.console-active .console-pane {
+    display: none;
+  }
+
+  .panels.console-active .console-pane {
+    display: block;
+  }
+  
+  .resizer {
+    display: none;
+  }
+}
