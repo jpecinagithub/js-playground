@@ -1,14 +1,33 @@
 /// <reference lib="webworker" />
 import { serialize, errorSer } from './serialize';
+import { maskCode } from './sandbox';
 import type { LogMsg, Ser } from './types';
 
 // Persistent worker for the interactive REPL: the same realm is reused, so
-// `let`/`const`/`var`/function declarations survive between inputs
-// (indirect eval runs in global scope).
+// `var`/function declarations survive between inputs (indirect eval runs in
+// global scope). `let`/`const` do NOT survive across eval calls per spec, so
+// a lone top-level `let`/`const` declaration is rewritten to `var` — the
+// common REPL case (`let qq = 21` then `qq * 2`) then keeps working.
 
 // Property access on globalThis keeps the eval indirect (global scope),
 // so declarations persist between REPL inputs.
 const indirectEval = (code: string): unknown => (globalThis as { eval: (c: string) => unknown }).eval(code);
+
+/** Rewrite `let x = …` / `const x = …` to `var` when the whole input is a single declaration. */
+function loneDeclarationToVar(input: string): string {
+  if (!/^\s*(let|const)\b/.test(input)) return input;
+  const masked = maskCode(input);
+  let depth = 0;
+  let semis = 0;
+  for (const ch of masked) {
+    if (ch === '{' || ch === '[' || ch === '(') depth++;
+    else if (ch === '}' || ch === ']' || ch === ')') depth--;
+    else if (ch === ';' && depth === 0) semis++;
+  }
+  if (masked.trimEnd().endsWith(';')) semis--;
+  if (semis !== 0) return input;
+  return input.replace(/^\s*(let|const)\b/, 'var');
+}
 
 interface PendingInput {
   id: number;
@@ -44,8 +63,9 @@ async function evaluate({ id, input }: PendingInput) {
   let result: Ser;
   try {
     let v: unknown;
+    const src = loneDeclarationToVar(input);
     try {
-      v = indirectEval(input);
+      v = indirectEval(src);
     } catch (err) {
       // Allow top-level await in the REPL by wrapping once.
       if (err instanceof SyntaxError && /(^|[^\w$])await[^\w$]/.test(input)) {

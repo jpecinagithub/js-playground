@@ -61,14 +61,24 @@ async function run(code, budgetMs = 1500) {
   ok(logs.length >= 2, `cutoff: partial logs kept (${logs.length})`);
 }
 
-// 5. variables inspector (Node: only `var`/function persist across indirect evals;
-//    `let`/`const` persistence is browser-specific and covered by the E2E test)
+// 5. variables inspector — instrumentation records const/let/var/function/class
 {
-  const { vars } = await run(`var nombre = "Ana";\nvar edad = 28;\nfunction suma(a, b) { return a + b; }`);
+  const { vars } = await run(`const nombre = "Ana";\nlet edad = 28;\nconst {a, b: c} = {a: 1, b: 2};\nconst [x] = [9];\nvar v = true;\nfunction suma(a, b) { return a + b; }\nclass P {}\nlet later = nombre + "!";`);
   const map = Object.fromEntries(vars);
-  ok(map.nombre && map.nombre.k === 'str' && map.nombre.v === 'Ana', 'vars: var string');
-  ok(map.edad && map.edad.k === 'num' && map.edad.v === 28, 'vars: var number');
+  ok(map.nombre && map.nombre.k === 'str' && map.nombre.v === 'Ana', 'vars: const string');
+  ok(map.edad && map.edad.k === 'num' && map.edad.v === 28, 'vars: let number');
+  ok(map.a && map.a.v === 1 && map.c && map.c.v === 2, 'vars: destructured object');
+  ok(map.x && map.x.v === 9, 'vars: destructured array');
+  ok(map.v && map.v.v === true, 'vars: var boolean');
   ok(map.suma && map.suma.k === 'fn', 'vars: function declaration');
+  ok(map.P && map.P.k === 'fn', 'vars: class');
+  ok(map.later && map.later.v === 'Ana!', 'vars: declaration order respected');
+}
+{
+  // error line numbers are unaffected by instrumentation (no newlines added)
+  const { logs } = await run(`const x = 1;\nnope();`);
+  const e = logs[0].args[0];
+  ok(e.k === 'err' && e.line === 2, `instrumentation: error line preserved (got ${e.line})`);
 }
 {
   const names = topLevelNames(`const nombre = "Ana";\nlet edad = 28;\nconst {a, b: c} = {a: 1, b: 2};\nconst [x] = [9];\nvar v = true;`);

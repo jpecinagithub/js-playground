@@ -44,6 +44,14 @@ Unit tests for the sandbox core (serializer, console capture, async tracking, de
 node test/exec.test.mjs
 ```
 
+End-to-end QA in headless Chromium (40 checks: landing, runs, errors, infinite-loop
+timeout, promises, examples, variables, REPL, step-by-step, ES/EN, keyboard,
+mobile, console.table, themes, fetch, persistence, PWA):
+
+```bash
+node test/e2e.mjs   # requires: npm run build && npx vite preview --port 4173
+```
+
 ---
 
 Created by Jon Peciña — a hands-on lab for learning JavaScript through direct experimentation.

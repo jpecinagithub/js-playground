@@ -303,14 +303,78 @@ function skipInitializer(src: string, i: number): number {
 
 /** Names declared with top-level const/let/var (brace/paren depth 0). */
 export function topLevelNames(code: string): string[] {
-  const src = maskCode(code);
+  return [...new Set(topLevelDeclarations(code).flatMap((d) => d.names))];
+}
+
+export interface TopDecl {
+  names: string[];
+  /** index in `code` just past the end of the declaration statement */
+  end: number;
+}
+
+function parseDeclStatement(
+  src: string,
+  i: number,
+  isIdStart: (c: string) => boolean,
+  isIdChar: (c: string) => boolean,
+): TopDecl {
   const names: string[] = [];
+  const n = src.length;
+  const skipSp = () => {
+    while (i < n && /\s/.test(src[i])) i++;
+  };
+  for (;;) {
+    skipSp();
+    if (i >= n || src[i] === ';') {
+      if (src[i] === ';') i++;
+      return { names, end: i };
+    }
+    if (src[i] === '{' || src[i] === '[') {
+      const r = readBalanced(src, i);
+      names.push(...patternNames(r.text));
+      i = r.next;
+    } else if (isIdStart(src[i])) {
+      let j = i;
+      while (j < n && isIdChar(src[j])) j++;
+      names.push(src.slice(i, j));
+      i = j;
+    } else return { names, end: i };
+    skipSp();
+    if (src[i] === '=') i = skipInitializer(src, i + 1);
+    skipSp();
+    if (src[i] === ',') {
+      i++;
+      continue;
+    }
+    if (src[i] === ';') {
+      i++;
+      return { names, end: i };
+    }
+    return { names, end: i };
+  }
+}
+
+/** Skip a balanced `(...)` starting at src[i] === '(' . Returns index past ')'. */
+function skipParens(src: string, i: number): number {
+  return readBalanced(src, i).next;
+}
+
+/**
+ * Top-level declarations (const/let/var/function/class) with their names and
+ * end positions. Operates on masked code (same length/indices as the original).
+ */
+export function topLevelDeclarations(code: string): TopDecl[] {
+  const src = maskCode(code);
+  const decls: TopDecl[] = [];
   let i = 0;
   const n = src.length;
   let brace = 0;
   let paren = 0;
   const isIdStart = (c: string) => /[A-Za-z_$]/.test(c);
   const isIdChar = (c: string) => /[\w$]/.test(c);
+  const skipSp = () => {
+    while (i < n && /\s/.test(src[i])) i++;
+  };
 
   while (i < n) {
     const c = src[i];
@@ -335,48 +399,44 @@ export function topLevelNames(code: string): string[] {
       continue;
     }
     if (brace === 0 && paren === 0 && isIdStart(c)) {
+      // function / async function / generator
       const fm = /^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/.exec(src.slice(i));
       if (fm) {
-        names.push(fm[1]);
         i += fm[0].length;
+        skipSp();
+        if (src[i] === '(') {
+          i = skipParens(src, i);
+          skipSp();
+          if (src[i] === '{') i = readBalanced(src, i).next;
+        }
+        decls.push({ names: [fm[1]], end: i });
         continue;
       }
+      // class (possibly `extends ...`)
       const cm = /^class\s+([A-Za-z_$][\w$]*)/.exec(src.slice(i));
       if (cm) {
-        names.push(cm[1]);
         i += cm[0].length;
+        let p = 0;
+        let j = i;
+        while (j < n) {
+          const ch = src[j];
+          if (ch === '(') p++;
+          else if (ch === ')') p--;
+          else if (ch === '{' && p === 0) {
+            i = readBalanced(src, j).next;
+            break;
+          }
+          j++;
+        }
+        if (j >= n) i = j;
+        decls.push({ names: [cm[1]], end: i });
         continue;
       }
       const m = /^(const|let|var)\b/.exec(src.slice(i));
       if (m) {
         i += m[1].length;
-        // parse the declarator list
-        for (;;) {
-          while (i < n && /\s/.test(src[i])) i++;
-          if (i >= n || src[i] === ';') {
-            if (src[i] === ';') i++;
-            break;
-          }
-          if (src[i] === '{' || src[i] === '[') {
-            const r = readBalanced(src, i);
-            names.push(...patternNames(r.text));
-            i = r.next;
-          } else if (isIdStart(src[i])) {
-            let j = i;
-            while (j < n && isIdChar(src[j])) j++;
-            names.push(src.slice(i, j));
-            i = j;
-          } else break;
-          while (i < n && /\s/.test(src[i])) i++;
-          if (src[i] === '=') i = skipInitializer(src, i + 1);
-          while (i < n && /\s/.test(src[i])) i++;
-          if (src[i] === ',') {
-            i++;
-            continue;
-          }
-          if (src[i] === ';') i++;
-          break;
-        }
+        decls.push(parseDeclStatement(src, i, isIdStart, isIdChar));
+        i = decls[decls.length - 1].end;
         continue;
       }
       while (i < n && isIdChar(src[i])) i++;
@@ -384,7 +444,26 @@ export function topLevelNames(code: string): string[] {
     }
     i++;
   }
-  return [...new Set(names)];
+  return decls;
+}
+
+/**
+ * Instrument user code for the Variables inspector: after every top-level
+ * declaration, record the bound values via a global `__jspRec` hook.
+ * Insertions add no newlines, so reported error line numbers are unchanged,
+ * and declarations keep their exact semantics (const stays const, etc.).
+ */
+export function instrumentForVars(code: string): string {
+  const decls = topLevelDeclarations(code);
+  if (decls.length === 0) return code;
+  let out = code;
+  for (let k = decls.length - 1; k >= 0; k--) {
+    const d = decls[k];
+    if (d.names.length === 0) continue;
+    const rec = d.names.map((nm) => `__jspRec(${JSON.stringify(nm)},${nm});`).join('');
+    out = out.slice(0, d.end) + ';' + rec + out.slice(d.end);
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -521,10 +600,18 @@ export async function runUserCode(
     (g.addEventListener as (t: string, f: (e: Event) => void) => void)('unhandledrejection', onUnhandled);
   }
 
+  // Hook for the Variables inspector (see instrumentForVars).
+  const recorded = new Map<string, unknown>();
+  (g as Record<string, unknown>).__jspRec = (name: string, value: unknown) => {
+    recorded.set(name, value);
+  };
+
   try {
     // Indirect eval -> runs in the worker's global scope, isolated per run
-    // because each execution gets a fresh worker.
-    (g.eval as (code: string) => unknown)(code);
+    // because each execution gets a fresh worker. Top-level declarations are
+    // instrumented beforehand so the Variables inspector can read let/const
+    // bindings (they do NOT survive across separate eval calls per spec).
+    (g.eval as (code: string) => unknown)(instrumentForVars(code));
   } catch (e) {
     emitError(e);
   }
@@ -543,12 +630,14 @@ export async function runUserCode(
   for (const id of Array.from(timerIds.keys())) oClearTimeout(id as never);
   for (const id of Array.from(intervalIds)) oClearInterval(id as never);
 
-  // Variables inspector: evaluate top-level declared names in the same realm.
+  // Variables inspector: values recorded by the instrumented declarations.
+  // Serialization happens after the async drain, so mutated objects show
+  // their final state.
   const vars: Array<[string, Ser]> = [];
   try {
-    for (const name of topLevelNames(code)) {
+    for (const [name, value] of recorded) {
       try {
-        vars.push([name, serialize((g.eval as (c: string) => unknown)(name))]);
+        vars.push([name, serialize(value)]);
       } catch {
         vars.push([name, { k: 'undef' }]);
       }
@@ -556,6 +645,8 @@ export async function runUserCode(
   } catch {
     /* scanning must never break the run */
   }
+
+  delete (g as Record<string, unknown>).__jspRec;
 
   if (typeof (g.removeEventListener as unknown) === 'function') {
     (g.removeEventListener as (t: string, f: (e: Event) => void) => void)('unhandledrejection', onUnhandled);
