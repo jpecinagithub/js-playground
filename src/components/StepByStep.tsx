@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Dict, Lang } from '../i18n';
 import type { StepDef } from '../steps';
 
@@ -18,6 +18,55 @@ export function StepByStepModal({
   onStepLine: (line: number | null) => void;
 }) {
   const [idx, setIdx] = useState(0);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setIdx(0);
+      onStepLine(steps[0]?.line ?? null);
+      // Start centered; the user can drag it anywhere afterwards.
+      setPos({
+        x: Math.max(8, (window.innerWidth - 520) / 2),
+        y: Math.max(8, (window.innerHeight - 520) / 2),
+      });
+    } else {
+      onStepLine(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open ]);
+
+  // ESC closes the floating window too.
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open, onClose]);
+
+  function onHeadPointerDown(e: React.PointerEvent) {
+    if ((e.target as HTMLElement).closest('button')) return; // let the ✕ work
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    setDragging(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onHeadPointerMove(e: React.PointerEvent) {
+    if (!drag.current) return;
+    const dx = drag.current.dx;
+    const dy = drag.current.dy;
+    setPos({
+      x: Math.min(Math.max(-(panelRef.current?.offsetWidth ?? 520) + 120, e.clientX - dx), window.innerWidth - 120),
+      y: Math.min(Math.max(0, e.clientY - dy), window.innerHeight - 48),
+    });
+  }
+  function endDrag() {
+    drag.current = null;
+    setDragging(false);
+  }
 
   useEffect(() => {
     if (open) {
@@ -38,14 +87,25 @@ export function StepByStepModal({
   const step = steps[idx];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={d.steps.title}>
-        <div className="modal-head">
-          <h2>{d.steps.title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label={d.steps.close}>
-            ✕
-          </button>
-        </div>
+    <div
+      ref={panelRef}
+      className="modal step-float"
+      style={{ left: pos.x, top: pos.y }}
+      role="dialog"
+      aria-label={d.steps.title}
+    >
+      <div
+        className={`modal-head step-drag${dragging ? ' dragging' : ''}`}
+        onPointerDown={onHeadPointerDown}
+        onPointerMove={onHeadPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <h2>{d.steps.title}</h2>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label={d.steps.close}>
+          ✕
+        </button>
+      </div>
         <p className="modal-intro">{d.steps.intro}</p>
 
         <div className="step-counter">
@@ -110,7 +170,6 @@ export function StepByStepModal({
             {d.steps.next} →
           </button>
         </div>
-      </div>
     </div>
   );
 }
