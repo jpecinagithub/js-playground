@@ -50,6 +50,7 @@ export interface Dict {
     output: string;
     prev: string;
     next: string;
+    finish: string;
     close: string;
     intro: string;
   };
@@ -120,6 +121,7 @@ export const STR: Record<Lang, Dict> = {
       output: 'Output',
       prev: 'Previous',
       next: 'Next',
+      finish: 'Finish',
       close: 'Close',
       intro: 'Watch how the values change, line by line.',
     },
@@ -201,6 +203,7 @@ export const STR: Record<Lang, Dict> = {
       output: 'Salida',
       prev: 'Anterior',
       next: 'Siguiente',
+      finish: 'Terminar',
       close: 'Cerrar',
       intro: 'Observa cómo cambian los valores, línea a línea.',
     },

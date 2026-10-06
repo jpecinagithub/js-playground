@@ -162,14 +162,19 @@ export function StepByStepModal({
               />
             ))}
           </div>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setIdx((i) => Math.min(steps.length - 1, i + 1))}
-            disabled={idx === steps.length - 1}
-          >
-            {d.steps.next} →
-          </button>
+          {idx === steps.length - 1 ? (
+            <button type="button" className="btn primary" onClick={onClose}>
+              ✓ {d.steps.finish}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setIdx((i) => Math.min(steps.length - 1, i + 1))}
+            >
+              {d.steps.next} →
+            </button>
+          )}
         </div>
     </div>
   );
