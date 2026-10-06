@@ -20,18 +20,27 @@ export function StepByStepModal({
   const [idx, setIdx] = useState(0);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const posRef = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // The window always stays fully inside the viewport — it can never get lost.
+  function setClampedPos(x: number, y: number) {
+    const w = panelRef.current?.offsetWidth ?? 520;
+    const h = panelRef.current?.offsetHeight ?? 400;
+    const maxX = Math.max(8, Math.min(window.innerWidth - w - 8, window.innerWidth - 120));
+    const maxY = Math.max(8, Math.min(window.innerHeight - h - 8, window.innerHeight - 48));
+    const nx = Math.min(Math.max(8, x), maxX);
+    const ny = Math.min(Math.max(8, y), maxY);
+    posRef.current = { x: nx, y: ny };
+    setPos(posRef.current);
+  }
 
   useEffect(() => {
     if (open) {
       setIdx(0);
       onStepLine(steps[0]?.line ?? null);
       // Start centered; the user can drag it anywhere afterwards.
-      setPos({
-        x: Math.max(8, (window.innerWidth - 520) / 2),
-        y: Math.max(8, (window.innerHeight - 520) / 2),
-      });
+      setClampedPos((window.innerWidth - 520) / 2, (window.innerHeight - 520) / 2);
     } else {
       onStepLine(null);
     }
@@ -48,35 +57,30 @@ export function StepByStepModal({
     return () => window.removeEventListener('keydown', h);
   }, [open, onClose]);
 
+  // Dragging uses window-level listeners: the drag always ends on pointerup,
+  // wherever the pointer happens to be, so the window can never get "stuck"
+  // following the cursor.
   function onHeadPointerDown(e: React.PointerEvent) {
     if ((e.target as HTMLElement).closest('button')) return; // let the ✕ work
-    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = posRef.current.x;
+    const origY = posRef.current.y;
     setDragging(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      setClampedPos(origX + ev.clientX - startX, origY + ev.clientY - startY);
+    };
+    const onUp = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   }
-  function onHeadPointerMove(e: React.PointerEvent) {
-    if (!drag.current) return;
-    const dx = drag.current.dx;
-    const dy = drag.current.dy;
-    setPos({
-      x: Math.min(Math.max(-(panelRef.current?.offsetWidth ?? 520) + 120, e.clientX - dx), window.innerWidth - 120),
-      y: Math.min(Math.max(0, e.clientY - dy), window.innerHeight - 48),
-    });
-  }
-  function endDrag() {
-    drag.current = null;
-    setDragging(false);
-  }
-
-  useEffect(() => {
-    if (open) {
-      setIdx(0);
-      onStepLine(steps[0]?.line ?? null);
-    } else {
-      onStepLine(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open ]);
 
   useEffect(() => {
     if (open) onStepLine(steps[idx]?.line ?? null);
@@ -97,9 +101,6 @@ export function StepByStepModal({
       <div
         className={`modal-head step-drag${dragging ? ' dragging' : ''}`}
         onPointerDown={onHeadPointerDown}
-        onPointerMove={onHeadPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
       >
         <h2>{d.steps.title}</h2>
         <button type="button" className="icon-btn" onClick={onClose} aria-label={d.steps.close}>
