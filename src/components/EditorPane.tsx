@@ -138,6 +138,7 @@ export function EditorPane({
       <CodeMirror
         value={code}
         height="100%"
+        theme="none"
         extensions={extensions}
         onChange={onChange}
         readOnly={!!readOnly}
